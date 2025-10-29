@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>StreetKings AutoWorks — Repair Workshop</title>
+<style>
+body {
+  margin: 0;
+  font-family: Inter, Arial, sans-serif;
+  background: #111827;
+  color: #f3f4f6;
+}
+.wrap { max-width: 1100px; margin: 30px auto; padding: 20px; }
+h1 { margin: 0 0 6px; }
+.card { background: #1f2937; padding: 16px; border-radius: 10px; }
+button {
+  background: #eab308; color: #000; border: 0;
+  padding: 8px 12px; border-radius: 6px; font-weight: 600; cursor: pointer;
+}
+button.ghost {
+  background: transparent; color: #9ca3af; border: 1px solid #374151;
+}
+input {
+  background: #111827; color: #f9fafb; border: 1px solid #374151;
+  padding: 6px 8px; border-radius: 5px; width: 100%;
+}
+table {
+  width: 100%; border-collapse: collapse; margin-top: 10px;
+}
+th, td {
+  padding: 6px 8px; border-bottom: 1px solid #374151;
+}
+th { color: #9ca3af; text-align: left; }
+.alert {
+  background: #064e3b; color: #d1fae5; padding: 8px;
+  border-radius: 5px; margin-bottom: 10px;
+}
+.deleteBtn {
+  background: #dc2626; color: white; border: none;
+  border-radius: 5px; padding: 4px 8px; cursor: pointer; font-size: 12px;
+}
+.deleteBtn:hover { background: #ef4444; }
+.service-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit,minmax(200px,1fr));
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.service-list label {
+  display: block;
+  background: #111827;
+  padding: 6px 8px;
+  border: 1px solid #374151;
+  border-radius: 5px;
+  cursor: pointer;
+  position: relative;
+}
+.manual-input {
+  margin-top: 5px;
+  display: none;
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>StreetKings AutoWorks • Repair Workshop</h1>
+  <div id="alert" class="alert" style="display:none;"></div>
+  <div class="card">
+    <form id="formService">
+      <label>Pilih Service:</label>
+      <div id="serviceList" class="service-list"></div>
+      <label>Qty (jumlah tiap item):</label>
+      <input type="number" id="qty" value="1" min="1"><br><br>
+      <button type="submit">Tambah Semua</button>
+    </form>
+
+    <hr>
+    <button class="ghost" id="exportBtn">Export CSV</button>
+    <button class="ghost" id="clearBtn">Clear All</button>
+    <h3>Total Bahan Baku</h3>
+    <p>Component: <b id="totalComp">0</b> | Material: <b id="totalMat">0</b> | Total: <b id="totalPrice">$0</b></p>
+    <table>
+      <thead>
+        <tr><th>Waktu</th><th>Service</th><th>Qty</th><th>Comp</th><th>Mat</th><th>Harga</th><th>Aksi</th></tr>
+      </thead>
+      <tbody id="recordTable"><tr><td colspan="7">Belum ada transaksi.</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const services = {
+  "repair_engine": {label:"Repair Engine", comp:null, mat:null, price:null},
+  "repair_body":   {label:"Repair Body", comp:null, mat:null, price:null},
+  "repair_tire":   {label:"Repair Tire", comp:null, mat:null, price:null},
+  "spray":         {label:"Spray Car", comp:40, mat:0, price:250},
+  "paintjob":      {label:"Paint Job Car", comp:50, mat:25, price:300},
+  "wheel":         {label:"Wheels Car", comp:50, mat:25, price:300},
+  "spoiler":       {label:"Spoiler Car", comp:25, mat:100, price:250},
+  "hood":          {label:"Hood Car", comp:25, mat:100, price:350},
+  "vent":          {label:"Vents Car", comp:25, mat:100, price:320},
+  "light":         {label:"Lights Car", comp:25, mat:100, price:325},
+  "exhaust":       {label:"Exhausts", comp:30, mat:100, price:400},
+  "front_bumper":  {label:"Front Bumper", comp:30, mat:125, price:400},
+  "rear_bumper":   {label:"Rear Bumper", comp:30, mat:125, price:400},
+  "roof":          {label:"Roofs Car", comp:25, mat:100, price:350},
+  "side_skirt":    {label:"Side Skirts", comp:25, mat:100, price:350},
+  "bullbar":       {label:"Bullbars", comp:25, mat:125, price:350},
+  "stereo":        {label:"Stereo", comp:100, mat:50, price:420},
+  "hydraulics":    {label:"Hydraulics", comp:100, mat:50, price:450},
+  "nitro_1":       {label:"Nitro 1", comp:100, mat:100, price:650},
+  "nitro_2":       {label:"Nitro 2", comp:175, mat:100, price:850},
+  "nitro_3":       {label:"Nitro 3", comp:200, mat:150, price:1000},
+  "neon":          {label:"Neon", comp:100, mat:50, price:400},
+  "engine_up":     {label:"Engine Upgrade", comp:200, mat:100, price:1000},
+  "body_up":       {label:"Body Upgrade", comp:100, mat:200, price:850},
+  "tank_up":       {label:"Fuel Tank Upgrade", comp:100, mat:200, price:850},
+  "remove_mod":    {label:"Remove Modification", comp:2, mat:2, price:50},
+  "pkg_full_upgrade": {label:"Paket: Full Upgrade", comp:800, mat:700, price:4500},
+  "pkg_full_allmod":  {label:"Paket: Full All Modif", comp:1900, mat:1750, price:5500}
+};
+
+let records = JSON.parse(localStorage.getItem("records") || "[]");
+const money = n => "$" + n.toLocaleString("en-US");
+
+function showAlert(msg){
+  const el=document.getElementById("alert");
+  el.textContent=msg; el.style.display="block";
+  setTimeout(()=>el.style.display="none",3000);
+}
+function saveData(){
+  localStorage.setItem("records", JSON.stringify(records));
+  renderTable();
+}
+function renderTable(){
+  const tbody=document.getElementById("recordTable");
+  if(records.length===0){tbody.innerHTML='<tr><td colspan="7">Belum ada transaksi.</td></tr>';return;}
+  tbody.innerHTML="";
+  let totalC=0,totalM=0,totalP=0;
+  records.slice().reverse().forEach((r,idx)=>{
+    const tr=document.createElement("tr");
+    tr.innerHTML=`<td>${r.time}</td><td>${r.service_label}</td><td>${r.qty}</td>
+    <td>${r.comp}</td><td>${r.mat}</td><td>${money(r.price)}</td>
+    <td><button class="deleteBtn" data-idx="${records.length-1-idx}">🗑</button></td>`;
+    tbody.appendChild(tr);
+    totalC+=r.comp; totalM+=r.mat; totalP+=r.price;
+  });
+  document.getElementById("totalComp").textContent=totalC;
+  document.getElementById("totalMat").textContent=totalM;
+  document.getElementById("totalPrice").textContent=money(totalP);
+  document.querySelectorAll(".deleteBtn").forEach(btn=>{
+    btn.addEventListener("click",()=>{
+      const i=parseInt(btn.dataset.idx);
+      if(confirm(`Hapus data "${records[i].service_label}"?`)){
+        records.splice(i,1);
+        saveData();
+      }
+    });
+  });
+}
+function populateServices(){
+  const list=document.getElementById("serviceList");
+  Object.keys(services).forEach(k=>{
+    const s=services[k];
+    const div=document.createElement("label");
+    div.innerHTML=`<input type="checkbox" value="${k}"> ${s.label}
+      ${(k.startsWith("repair_")) ? '<input type="number" placeholder="Masukkan jumlah component" class="manual-input" min="1">' : ''}`;
+    list.appendChild(div);
+  });
+
+  // Tampilkan textbox hanya untuk 3 opsi repair
+  list.querySelectorAll('input[type="checkbox"]').forEach(cb=>{
+    cb.addEventListener("change",()=>{
+      const manualInput=cb.parentElement.querySelector(".manual-input");
+      if(manualInput){
+        manualInput.style.display=cb.checked ? "block" : "none";
+      }
+    });
+  });
+}
+
+document.getElementById("formService").addEventListener("submit",e=>{
+  e.preventDefault();
+  const checked=[...document.querySelectorAll("#serviceList input[type='checkbox']:checked")];
+  const qty=parseInt(document.getElementById("qty").value)||1;
+  if(checked.length===0){showAlert("Pilih minimal satu service!");return;}
+
+  let totalC=0,totalM=0,totalP=0;
+  let labels=[];
+  checked.forEach(cb=>{
+    const key=cb.value;
+    const svc=services[key];
+    let comp=0,mat=0,price=0;
+
+    if(key.startsWith("repair_")){
+      // ambil dari textbox manual
+      const manual=cb.parentElement.querySelector(".manual-input");
+      comp=parseFloat(manual.value)||0;
+      mat=0; // repair tidak pakai material
+      price=(key==="repair_tire")?comp*2.5:comp*3;
+    } else {
+      comp=(svc.comp||0)*qty;
+      mat=(svc.mat||0)*qty;
+      price=(svc.price||0)*qty;
+    }
+
+    totalC+=comp; totalM+=mat; totalP+=price;
+    labels.push(svc.label);
+  });
+
+  const rec={
+    time:new Date().toLocaleString(),
+    service_label:labels.join(", "),
+    qty,
+    comp:totalC,
+    mat:totalM,
+    price:totalP
+  };
+  records.push(rec);
+  saveData();
+  showAlert(`✔ ${labels.length} service ditambahkan (total: ${money(totalP)}).`);
+  document.querySelectorAll("#serviceList input[type='checkbox']").forEach(i=>{
+    i.checked=false;
+    const box=i.parentElement.querySelector(".manual-input");
+    if(box){ box.value=""; box.style.display="none"; }
+  });
+});
+
+document.getElementById("clearBtn").addEventListener("click",()=>{
+  if(confirm("Hapus semua data?")){
+    records=[]; saveData(); showAlert("Semua data dihapus.");
+  }
+});
+document.getElementById("exportBtn").addEventListener("click",()=>{
+  const csv=["Time,Service,Qty,Comp,Mat,Price"];
+  records.forEach(r=>csv.push(`${r.time},${r.service_label},${r.qty},${r.comp},${r.mat},${r.price}`));
+  const blob=new Blob([csv.join("\n")],{type:"text/csv"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=`service_${Date.now()}.csv`;
+  a.click();
+});
+
+populateServices();
+renderTable();
+</script>
+</body>
+</html>
